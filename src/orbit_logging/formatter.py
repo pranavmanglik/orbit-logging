@@ -20,7 +20,23 @@ import logging
 from datetime import UTC, datetime
 
 _MAX_MESSAGE_LENGTH = 16_384
+_MAX_LOGGER_LENGTH = 256
+_MAX_LEVEL_LENGTH = 64
+_MAX_EXCEPTION_TYPE_LENGTH = 128
 _TRUNCATION_MARKER = "... [truncated]"
+
+
+def _safe_label(value: object, maximum: int) -> str:
+    """Bound a LogRecord label and replace control characters before JSON serialization."""
+    if not isinstance(value, str):
+        return "unknown"
+    normalized = "".join(
+        "_" if ord(character) < 32 or 0x7F <= ord(character) < 0xA0 else character
+        for character in value
+    )
+    if len(normalized) > maximum:
+        return normalized[:maximum] + _TRUNCATION_MARKER
+    return normalized
 
 
 class JSONFormatter(logging.Formatter):
@@ -47,8 +63,8 @@ class JSONFormatter(logging.Formatter):
             message = message[:_MAX_MESSAGE_LENGTH] + _TRUNCATION_MARKER
         payload: dict[str, object] = {
             "timestamp": datetime.fromtimestamp(record.created, UTC).isoformat(),
-            "level": record.levelname,
-            "logger": record.name,
+            "level": _safe_label(record.levelname, _MAX_LEVEL_LENGTH),
+            "logger": _safe_label(record.name, _MAX_LOGGER_LENGTH),
             "message": message,
             "request_id": str(request_id) if request_id is not None else None,
             "correlation_id": current_correlation_id(),
@@ -59,7 +75,9 @@ class JSONFormatter(logging.Formatter):
             payload["application_id"] = str(application.config.application.id)
             payload["application"] = application.config.application.name
         if record.exc_info and record.exc_info[0] is not None:
-            payload["exception_type"] = record.exc_info[0].__name__
+            payload["exception_type"] = _safe_label(
+                record.exc_info[0].__name__, _MAX_EXCEPTION_TYPE_LENGTH
+            )
         return json.dumps(payload, ensure_ascii=True, allow_nan=False)
 
 

@@ -30,7 +30,7 @@ logging backend, or transport. Install a separate integration for those capabili
 
 ## Status
 
-This package is pre-alpha; its API is not stable and it is not yet a published release. It supports
+This package is alpha; its API is not stable and it is not yet a published release. It supports
 Python 3.11 through 3.14.
 
 ## Documentation

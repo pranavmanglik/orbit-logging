@@ -99,3 +99,27 @@ def test_formatter_truncates_oversized_log_messages() -> None:
 
     assert len(payload["message"]) == 16_384 + len("... [truncated]")
     assert payload["message"].endswith("... [truncated]")
+
+
+def test_formatter_bounds_and_sanitizes_record_labels() -> None:
+    """Dynamic record labels cannot inject lines or create unbounded JSON fields."""
+    unsafe_error_type = type("Private\nException", (Exception,), {})
+    error = unsafe_error_type("sensitive detail")
+    record = logging.LogRecord(
+        "logger" * 100,
+        logging.ERROR,
+        "",
+        1.0,
+        "failed",
+        (),
+        (unsafe_error_type, error, None),
+    )
+    record.levelname = "ERROR\nforged" + "x" * 100
+
+    payload = json.loads(JSONFormatter().format(record))
+
+    assert len(payload["logger"]) <= 256 + len("... [truncated]")
+    assert payload["logger"].endswith("... [truncated]")
+    assert "\n" not in payload["level"]
+    assert "\n" not in payload["exception_type"]
+    assert "sensitive detail" not in json.dumps(payload)

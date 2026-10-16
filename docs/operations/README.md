@@ -1,50 +1,38 @@
-# Orbit Logging: operations and security
+# Orbit Logging: operations
 
-This guide organizes runtime behavior documented by the package. It does not certify production readiness. Verify provider/client versions, permissions, transport security, limits, and failure behavior in the target environment before release.
+`orbit-logging` has no runtime settings, environment variables, or handlers of its own. The
+application configures Python logging and attaches `JSONFormatter` to the handlers that should emit
+Orbit context.
 
-## Configuration surface
+## Handler setup
 
-Environment names found in the package README:
+Configure levels, filters, propagation, stream/file destinations, rotation, and redaction at the
+application boundary. Importing `orbit_logging` does not modify the root logger. When configuring
+the same logger at multiple levels, check propagation to avoid duplicate records. Attach separate
+formatter instances per handler if sinks need different formatting.
 
-The package README does not name `ORBIT_*` variables. Use its typed constructors and application configuration, and confirm exact runtime inputs in the implementation before deployment.
+The formatter runs synchronously as part of `Handler.emit`. A slow file system or remote sink can
+block the calling thread, including an async request thread. For high-throughput services, use a
+queue-based logging setup or nonblocking handler managed by the application. Bound the queue and
+define its overflow and shutdown policy.
 
-Use the package README's constructor and deployment examples. Store credentials in a secret manager and avoid logging credentials, raw provider errors, request data, or opaque cursors.
+## Output and downstream systems
 
-## Lifecycle, failure behavior, and limits
+Each call returns one compact JSON string. Configure the sink to preserve one complete JSON record
+per line and to avoid adding an incompatible prefix. Ensure downstream parsers tolerate optional
+application/context fields and the exception-type-only representation. The formatter does not
+include a traceback, so use a separate explicitly approved diagnostic path if traceback retention is
+required; review that path for sensitive data.
 
-`orbit-logging` is an optional structured logging integration for Orbit Core. It provides a
-standard-library `logging.Formatter` that adds Orbit's task-local application, request, correlation,
-trace and span context to each JSON record.
+Messages are truncated after 16,384 characters, but this happens after Python constructs the
+formatted message. Keep messages concise before they reach the formatter. Logger, level, and
+exception class labels are also bounded. Context IDs are populated only when Core has bound them to
+the current async context.
 
-```bash
-pip install orbit-core orbit-logging
-```
+## Retention and delivery
 
-Attach the formatter to a handler configured by your application or hosting environment:
-
-```python
-import logging
-
-from orbit_logging import JSONFormatter
-
-handler = logging.StreamHandler()
-handler.setFormatter(JSONFormatter())
-logging.getLogger("my_service").addHandler(handler)
-```
-
-Importing this package does not configure the root logger or create handlers. Records include the
-explicit message and exception type, but omit exception messages, stack locals, and arbitrary
-`LogRecord` extras. Messages above 16,384 characters are truncated with a marker. Keep secrets out
-of the message passed to the logging API as well.
-
-The formatter depends on Core's public runtime-context accessors; it does not add an exporter,
-logging backend, or transport. Install a separate integration for those capabilities if needed.
-
-## Status
-
-This package is pre-alpha; its API is not stable and it is not yet a published release. It supports
-Python 3.11 through 3.14.
-
-## Production validation
-
-Validate startup/shutdown cleanup, timeout and cancellation behavior, concurrency and payload bounds where applicable, secret rotation and least-privilege access, data durability, backup/restore, and failover against the selected provider. Do not infer distributed or durable guarantees from an in-process API or fake-client tests.
+This package does not rotate files, encrypt records, retry sink delivery, buffer during outages, or
+guarantee durable writes. Configure retention, access controls, encryption, backup, delivery
+monitoring, and shutdown flushing in the chosen handler or collector. Avoid sending the same
+record to multiple sinks with different data-retention policies unless each sink is approved for
+that data.

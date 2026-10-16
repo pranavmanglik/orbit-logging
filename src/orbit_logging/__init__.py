@@ -13,6 +13,7 @@
 # limitations under the License.
 """Optional structured logging integration for Orbit Core."""
 
+from orbit_logging.context import current_log_context
 from orbit_logging.formatter import JSONFormatter
 
-__all__ = ["JSONFormatter"]
+__all__ = ["JSONFormatter", "current_log_context"]
